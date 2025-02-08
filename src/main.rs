@@ -96,6 +96,13 @@ fn is_prime(n: Term) -> Formula {
     )
 }
 
+// 素数は無限個存在
+fn prime_inf() -> Formula {
+    all("n", |n| {
+        ex("p", |p| and(is_prime(p.var()), le(n.var(), p.var())))
+    })
+}
+
 fn is_pe(p: Term, v: Term) -> Formula {
     // ex e. p^e = v   :=  all q. is_prime q and p != q -> not (q | v)
     all("q", |q| {
@@ -328,14 +335,21 @@ fn perfect_inf() -> Formula {
 // TODO
 
 fn main() {
+    //println!("{}", to_latex(is_prime(nat(5_usize))));
+
+    //println!("{}", to_latex_verbose(is_prime(nat(97_usize))));
+
+    //println!("{}", to_latex(prime_inf()));
+
+    //println!("{}", to_latex(is_pe(two(), global_var("m"))));
+
     // 2^k = m
-    //let f1 = a_pow_k_eq_b(two(), global_var("k"), global_var("m"));
-    let f1 = a_pow_k_eq_b(two(), global_var("k"), global_var("m"));
-    //dbg!(&f1);
-    //println!("{}", to_latex(f1));
+    //println!(
+    //    "{}",
+    //    to_latex(a_pow_k_eq_b(two(), global_var("k"), global_var("m")))
+    //);
 
-    //let f2 = fermat_last_theorem();
-    //println!("{}", to_latex(f2));
+    //println!("{}", to_latex(perfect_inf()));
 
-    println!("{}", to_latex(perfect_inf()));
+    println!("{}", to_latex(fermat_last_theorem()));
 }

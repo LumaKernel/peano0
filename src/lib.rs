@@ -1,6 +1,5 @@
 use num_bigint::BigUint;
 use rustc_hash::FxHashMap;
-use std::collections::HashSet;
 use std::convert::Infallible;
 use std::str::FromStr;
 
@@ -8,6 +7,7 @@ pub struct ToLatexContext {
     id_to_latex: FxHashMap<LocalNameRef, String>,
     preferred_name: FxHashMap<LocalNameRef, Name>,
     name_use_count: FxHashMap<Name, usize>,
+    nat_simple: bool,
 }
 impl ToLatexContext {
     fn new() -> Self {
@@ -15,6 +15,7 @@ impl ToLatexContext {
             id_to_latex: FxHashMap::default(),
             preferred_name: FxHashMap::default(),
             name_use_count: FxHashMap::default(),
+            nat_simple: true,
         }
     }
     fn register_scope(&mut self, sf: &ScopedFormula) {
@@ -35,6 +36,9 @@ impl ToLatexContext {
             format!("{}_{{{}}}", preferred_name.0, index)
         })
     }
+    fn nat_simple(&self) -> bool {
+        self.nat_simple
+    }
 }
 
 pub trait ToLatex {
@@ -43,6 +47,12 @@ pub trait ToLatex {
 
 pub fn to_latex(mut t: Formula) -> String {
     let mut ctx = ToLatexContext::new();
+    t.roll_up();
+    t.to_latex(&mut ctx)
+}
+pub fn to_latex_verbose(mut t: Formula) -> String {
+    let mut ctx = ToLatexContext::new();
+    ctx.nat_simple = false;
     t.roll_up();
     t.to_latex(&mut ctx)
 }
@@ -104,18 +114,6 @@ impl ScopedFormula {
     }
 }
 
-fn fast_union<T, S>(mut a: HashSet<T, S>, mut b: HashSet<T, S>) -> HashSet<T, S>
-where
-    T: Eq + std::hash::Hash,
-    S: std::hash::BuildHasher + Default,
-{
-    if a.len() < b.len() {
-        std::mem::swap(&mut a, &mut b);
-    }
-    a.extend(b);
-    a
-}
-
 #[derive(Clone, Debug)]
 pub enum Term {
     Nat(BigUint),
@@ -165,10 +163,7 @@ impl Term {
             Term::Nat(..) | Term::Var(..) | Term::GlobalVar(..) => {
                 return Ok(());
             }
-            Term::Val(sf) => {
-                //sf.body.hoist_var()?;
-                Term::Var(sf.local_name.id)
-            }
+            Term::Val(sf) => Term::Var(sf.local_name.id),
         };
         let val = std::mem::replace(self, var);
         Err(match val {
@@ -180,7 +175,24 @@ impl Term {
 impl ToLatex for Term {
     fn to_latex(&self, ctx: &mut ToLatexContext) -> String {
         match self {
-            Term::Nat(n) => n.to_string(),
+            Term::Nat(n) => {
+                if ctx.nat_simple() {
+                    n.to_string()
+                } else if n == &0u8.into() {
+                    "O".to_string()
+                } else {
+                    let n = TryInto::<usize>::try_into(n.clone()).unwrap();
+                    let mut s = String::new();
+                    for _ in 0..n {
+                        s.push_str("S(");
+                    }
+                    s.push('O');
+                    for _ in 0..n {
+                        s.push(')');
+                    }
+                    s
+                }
+            }
             Term::Add(a, b) => {
                 let a_latex = a.to_latex(ctx);
                 let mut b_latex = b.to_latex(ctx);
@@ -213,7 +225,7 @@ impl ToLatex for Term {
                         .entry(preferred_name.clone())
                         .or_insert(0);
                     *index += 1;
-                    format!("{}_{{{}}}", preferred_name.0, index)
+                    format!("\\mathit{{{}}}_{{{}}}", preferred_name.0, index)
                 })
                 .clone(),
             Term::GlobalVar(name) => format!("\\mathbf{{{}}}", name.0.clone()),
@@ -240,6 +252,9 @@ fn local(s: &str) -> LocalName {
     }
 }
 
+pub fn nat(n: usize) -> Term {
+    Term::Nat(BigUint::from(n))
+}
 pub fn zero() -> Term {
     Term::Nat(BigUint::from(0_usize))
 }
@@ -420,31 +435,6 @@ impl Formula {
             Formula::Forall(sf) => Formula::Forall(sf.replace_var(replace_id, new_term)),
             Formula::Exists(sf) => Formula::Exists(sf.replace_var(replace_id, new_term)),
         }
-    }
-    fn hoist_var(&mut self) -> Result<(), ScopedFormula> {
-        match self {
-            Formula::Eq(a, b) => {
-                a.hoist_var()?;
-                b.hoist_var()?;
-            }
-            Formula::And(a, b) => {
-                a.hoist_var()?;
-                b.hoist_var()?;
-            }
-            Formula::Or(a, b) => {
-                a.hoist_var()?;
-                b.hoist_var()?;
-            }
-            Formula::Not(a) => a.hoist_var()?,
-            Formula::Bot => {}
-            Formula::Implies(a, b) => {
-                a.hoist_var()?;
-                b.hoist_var()?;
-            }
-            Formula::Forall(sf) => sf.body.hoist_var()?,
-            Formula::Exists(sf) => sf.body.hoist_var()?,
-        }
-        Ok(())
     }
     fn roll_up(&mut self) {
         let mut sfs = vec![];
